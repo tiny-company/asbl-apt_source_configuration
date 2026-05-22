@@ -17,11 +17,13 @@
 - name: "GPG | {{ source_name }} | Ensure gnupg and curl are installed"
   ansible.builtin.apt:
     name:
-      - gnupg
+      - "{{ apt_pgp_package_name }}"
       - curl
       - ca-certificates
     state: present
     update_cache: false
+    when: 
+      - "apt_pgp_package_name not in ansible_facts.packages"
 
 ## Keyring dir 
 

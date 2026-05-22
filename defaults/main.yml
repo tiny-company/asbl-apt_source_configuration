@@ -11,6 +11,7 @@ apt_backup_keep: 5
 
 ## keyring vars
 apt_gpg_keyring_dir: "/usr/share/keyrings"
+apt_pgp_package_name: "gnupg" # could be : gnupg, pgpgpg, pgp (see distribution relative package name)
 
 ## apt source vars  
 apt_sources:
