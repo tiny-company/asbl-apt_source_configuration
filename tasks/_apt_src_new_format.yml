@@ -1,0 +1,94 @@
+---
+# Description : new apt src configuration (deb822) task file 
+# file : _apt_src_new_format.yml
+
+## get PGP keys 
+
+- name: "{{ source_name }} | Fetch GPG key"
+  ansible.builtin.include_tasks: 
+    file: _gpg.yml
+
+## Remove old source file
+
+- name: Remove legacy sources.list if present
+  ansible.builtin.file:
+    path: /etc/apt/sources.list
+    state: absent
+
+- name: "Find all legacy .list files"
+  ansible.builtin.find:
+    paths: "/etc/apt/sources.list.d/"
+    patterns: "*.list"
+  register: legacy_list_source
+
+- name: Remove any leftover .list files
+  ansible.builtin.file:
+    path: "{{ legacy_sources_item }}"
+    state: absent
+  loop: "{{ legacy_list_source.files }}"
+  loop_control:
+    label: "{{ legacy_list_source.files }}"
+    loop_var: legacy_sources_item
+
+## backup existing file
+
+- name: "{{ source_name }} | Check if .sources file exists"
+  ansible.builtin.stat:
+    path: "{{ source.dest }}"
+  register: source_stat
+
+- name: "{{ source_name }} | Create backup directory"
+  ansible.builtin.file:
+    path: "{{ apt_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: source_stat.stat.exists
+
+- name: "{{ source_name }} | Backup existing file with timestamp"
+  ansible.builtin.copy:
+    src: "{{ source.dest }}"
+    dest: >-
+      {{ apt_backup_dir }}/{{ source.dest | basename }}.{{ ansible_date_time.iso8601_basic_short }}.bak
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  when: source_stat.stat.exists
+
+- name: "{{ source_name }} | Find all backups for this source"
+  ansible.builtin.find:
+    paths: "{{ apt_backup_dir }}"
+    patterns: "{{ source.dest | basename }}.*.bak"
+  register: source_backups
+  when: source_stat.stat.exists
+
+- name: "{{ source_name }} | Prune old backups, keep last {{ apt_backup_keep }}"
+  ansible.builtin.file:
+    path: "{{ old_backups.path }}"
+    state: absent
+  loop: >-
+    {{
+      source_backups.files
+      | sort(attribute='mtime')
+      | list
+    }}
+  when:
+    - source_stat.stat.exists
+    - source_backups.files | length > apt_backup_keep
+  loop_control:
+    label: "{{ old_backups.path | basename }}"
+    loop_var: old_backups
+    
+
+## Create source file
+
+- name: "{{ source_name }} | Deploy .sources file"
+  ansible.builtin.template:
+    src: apt_source.j2
+    dest: "{{ source.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Run apt update

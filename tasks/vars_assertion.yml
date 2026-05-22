@@ -1,0 +1,217 @@
+---
+# Description : Assert role mandatory vars are set
+# file : vars_assertion.yml
+## Global vars 
+
+- name: "Assert | apt_backup_dir is defined and not empty"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - apt_backup_dir is defined
+      - apt_backup_dir | length > 0
+      - apt_backup_dir is string
+      - apt_backup_dir.startswith('/')
+    fail_msg: >
+      'apt_backup_dir' must be defined as an absolute path string.
+      Got: '{{ apt_backup_dir | default('undefined') }}'
+    success_msg: "apt_backup_dir => {{ apt_backup_dir }}"
+
+- name: "Assert | apt_backup_keep is a positive integer"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - apt_backup_keep is defined
+      - apt_backup_keep | int > 0
+      - apt_backup_keep | int == apt_backup_keep
+    fail_msg: >
+      'apt_backup_keep' must be a positive integer.
+      Got: '{{ apt_backup_keep | default('undefined') }}'
+    success_msg: "apt_backup_keep => {{ apt_backup_keep }}"
+
+- name: "Assert | apt_cleanup_unmanaged is a boolean"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - apt_cleanup_unmanaged is defined
+      - apt_cleanup_unmanaged | bool == apt_cleanup_unmanaged
+    fail_msg: >
+      'apt_cleanup_unmanaged' must be a boolean (true/false).
+      Got: '{{ apt_cleanup_unmanaged | default('undefined') }}'
+    success_msg: "apt_cleanup_unmanaged => {{ apt_cleanup_unmanaged }}"
+
+- name: "Assert | apt_sources is defined and not empty"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - apt_sources is defined
+      - apt_sources | length > 0
+      - apt_sources is mapping
+    fail_msg: >
+      'apt_sources' must be defined as a non-empty dict.
+      Got: '{{ apt_sources | default('undefined') }}'
+    success_msg: "apt_sources => {{ apt_sources | length }} source(s) defined"
+
+## Per-source vars 
+
+- name: "Assert | Validate each source entry in apt_sources"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      ## dest
+      - item.value.dest is defined
+      - item.value.dest | length > 0
+      - item.value.dest is string
+      - item.value.dest.startswith('/')
+      - item.value.dest.endswith('.sources')
+
+      ## types
+      - item.value.types is defined
+      - item.value.types | length > 0
+      - item.value.types is iterable
+      - item.value.types | difference(['deb', 'deb-src']) | length == 0
+
+      ## uris
+      - item.value.uris is defined
+      - item.value.uris | length > 0
+      - item.value.uris is iterable
+
+      ## suites
+      - item.value.suites is defined
+      - item.value.suites | length > 0
+      - item.value.suites is iterable
+
+      ## components
+      - item.value.components is defined
+      - item.value.components | length > 0
+      - item.value.components is iterable
+
+      ## signed_by
+      - item.value.signed_by is defined
+      - item.value.signed_by | length > 0
+      - item.value.signed_by is string
+      - item.value.signed_by.startswith('/')
+
+      ## enabled
+      - item.value.enabled is defined
+      - item.value.enabled | bool == item.value.enabled
+
+    fail_msg: >
+      Source '{{ item.key }}' has invalid configuration.
+      Check these required fields:
+        dest      (absolute path ending in .sources) => '{{ item.value.dest      | default('MISSING') }}'
+        types     (list of deb / deb-src)            => '{{ item.value.types     | default('MISSING') }}'
+        uris      (non-empty list of URLs)            => '{{ item.value.uris      | default('MISSING') }}'
+        suites    (non-empty list)                    => '{{ item.value.suites    | default('MISSING') }}'
+        components(non-empty list)                    => '{{ item.value.components| default('MISSING') }}'
+        signed_by (absolute path to keyring)          => '{{ item.value.signed_by | default('MISSING') }}'
+        enabled   (boolean)                           => '{{ item.value.enabled   | default('MISSING') }}'
+
+    success_msg: "Source '{{ item.key }}' => OK (dest: {{ item.value.dest }})"
+
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+## URI format check 
+
+- name: "Assert | Each URI must start with http://, https://, or ftp://"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - item.1 is match('^(https?|ftp)://.+')
+    fail_msg: >
+      Source '{{ item.0.key }}' has invalid URI: '{{ item.1 }}'.
+      Must start with http://, https://, or ftp://
+    success_msg: "URI '{{ item.1 }}' => OK"
+  loop: >-
+    {{
+      apt_sources | dict2items
+      | subelements('value.uris')
+    }}
+  loop_control:
+    label: "{{ item.0.key }} => {{ item.1 }}"
+
+## Duplicate dest check 
+
+- name: "Assert | No duplicate dest paths across sources"
+  ansible.builtin.assert:
+    quiet: true
+    that:
+      - dest_paths | length == dest_paths | unique | list | length
+    fail_msg: >
+      Duplicate 'dest' paths found in apt_sources.
+      Each source must have a unique destination file.
+      Paths: {{ dest_paths }}
+    success_msg: "All dest paths are unique => OK"
+  vars:
+    dest_paths: "{{ apt_sources | dict2items | map(attribute='value.dest') | list }}"
+
+## GPG vars check 
+
+- name: "Assert | GPG block is defined for each source"
+  ansible.builtin.assert:
+    that:
+      - item.value.gpg is defined
+      - item.value.gpg is mapping
+      - item.value.gpg.managed is defined
+      - item.value.gpg.managed | bool == item.value.gpg.managed
+    fail_msg: >
+      Source '{{ item.key }}' is missing a valid 'gpg' block.
+      Required:
+        gpg.managed: true/false
+      Got: '{{ item.value.gpg | default('MISSING') }}'
+    success_msg: "GPG block for '{{ item.key }}' => OK"
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "Assert | Managed GPG sources have url or keyserver+key_id"
+  ansible.builtin.assert:
+    that:
+      - >
+        (item.value.gpg.url is defined and item.value.gpg.url | length > 0)
+        or
+        (item.value.gpg.keyserver is defined and item.value.gpg.key_id is defined)
+    fail_msg: >
+      Source '{{ item.key }}' has gpg.managed=true but no fetch method defined.
+      Provide either:
+        gpg.url: "https://..."
+        or
+        gpg.keyserver: "keyserver.ubuntu.com"
+        gpg.key_id: "XXXXXXXXXXXXXXXX"
+    success_msg: "GPG fetch method for '{{ item.key }}' => OK"
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.gpg.managed | default(false)
+
+- name: "Assert | GPG URL must start with https://"
+  ansible.builtin.assert:
+    that:
+      - item.value.gpg.url is match('^https://.+')
+    fail_msg: >
+      Source '{{ item.key }}' gpg.url must use https://.
+      Got: '{{ item.value.gpg.url }}'
+    success_msg: "GPG URL for '{{ item.key }}' => OK"
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - item.value.gpg.managed | default(false)
+    - item.value.gpg.url is defined
+
+- name: "Assert | GPG fingerprint format if defined (40 hex chars)"
+  ansible.builtin.assert:
+    that:
+      - item.value.gpg.fingerprint | replace(' ', '') is match('^[0-9A-Fa-f]{40}$')
+    fail_msg: >
+      Source '{{ item.key }}' gpg.fingerprint is invalid.
+      Must be 40 hex characters (spaces allowed).
+      Got: '{{ item.value.gpg.fingerprint }}'
+    success_msg: "GPG fingerprint format for '{{ item.key }}' => OK"
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - item.value.gpg.managed | default(false)
+    - item.value.gpg.fingerprint is defined

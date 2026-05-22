@@ -1,0 +1,33 @@
+---
+# Description : Install package
+# file : main.yml
+# Source : https://docs.ansible.com/ansible/latest/collections/ansible/builtin/package_module.html
+
+- name: Validate all role variables
+  ansible.builtin.include_tasks:
+    file: vars_assertion.yml
+
+- name: Cleanup unmanaged .sources files
+  ansible.builtin.include_tasks: 
+    file: _cleanup.yml
+  when: apt_cleanup_unmanaged | default(true)
+
+- name: Configure Source for old apt src format 
+  ansible.builtin.include_tasks:
+    file: _apt_src_old_format.yml
+  when:
+    - ansible_distribution == "Debian"
+    - ansible_distribution_major_version | int <= 12
+
+- name: Configure Source for new apt src format
+  ansible.builtin.include_tasks:
+    file: _apt_src_new_format.yml
+  loop: "{{ apt_sources | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    source_name: "{{ item.key }}"
+    source: "{{ item.value }}"
+  when:
+    - ansible_distribution == "Debian"
+    - ansible_distribution_major_version | int >= 13

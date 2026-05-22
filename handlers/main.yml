@@ -1,0 +1,7 @@
+---
+# Description : handlers for this role
+# file : main.yml
+
+- name: Run apt update
+  ansible.builtin.apt:
+    update_cache: true

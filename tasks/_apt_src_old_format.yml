@@ -1,0 +1,8 @@
+---
+# Description : old apt src configuration task file 
+# file : apt_src_old_format.yml
+
+- name: Debian 12 and older (configure old sources.list format)
+  ansible.builtin.template:
+    src: sources.list.j2
+    dest: /etc/apt/sources.list

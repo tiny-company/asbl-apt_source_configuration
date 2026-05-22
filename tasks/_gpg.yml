@@ -1,0 +1,180 @@
+---
+# Description : get pgp keys for related repo sources 
+# file : _gpg.yml
+
+
+## Skip if not managed 
+
+- name: "GPG | {{ source_name }} | Skip - keyring not managed by this role"
+  ansible.builtin.debug:
+    msg: >
+      Skipping GPG management for '{{ source_name }}':
+      signed_by={{ source.signed_by }} is expected to already exist.
+  when: not source.gpg.managed | default(false)
+
+## Dependencies 
+
+- name: "GPG | {{ source_name }} | Ensure gnupg and curl are installed"
+  ansible.builtin.apt:
+    name:
+      - gnupg
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: false
+
+## Keyring dir 
+
+- name: "GPG | {{ source_name }} | Ensure keyring directory exists"
+  ansible.builtin.file:
+    path: "{{ apt_gpg_keyring_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+## Check if keyring already exists 
+
+- name: "GPG | {{ source_name }} | Check if keyring already exists"
+  ansible.builtin.stat:
+    path: "{{ source.signed_by }}"
+  register: keyring_existing
+
+## Fetch from URL 
+
+- name: "GPG | {{ source_name }} | Fetch key from URL"
+  when:
+    - source.gpg.managed | default(false)
+    - source.gpg.url is defined
+    - not keyring_existing.stat.exists
+  block:
+
+    - name: "GPG | {{ source_name }} | Download raw key to temp file"
+      ansible.builtin.get_url:
+        url: "{{ source.gpg.url }}"
+        dest: "/tmp/{{ source_name }}.gpg.tmp"
+        mode: "0600"
+        force: true
+      register: gpg_download
+
+    - name: "GPG | {{ source_name }} | Detect key format (armored or binary)"
+      ansible.builtin.shell:
+        cmd: |
+          file /tmp/{{ source_name }}.gpg.tmp | grep -q 'PGP public key block' \
+            && echo 'binary' || echo 'armored'
+      register: gpg_format
+      changed_when: false
+
+    - name: "GPG | {{ source_name }} | Dearmor key if ASCII armored"
+      ansible.builtin.shell:
+        cmd: >
+          gpg --dearmor
+          < /tmp/{{ source_name }}.gpg.tmp
+          > {{ source.signed_by }}
+      when: gpg_format.stdout == 'armored'
+      changed_when: true
+
+    - name: "GPG | {{ source_name }} | Copy binary key directly"
+      ansible.builtin.copy:
+        src: "/tmp/{{ source_name }}.gpg.tmp"
+        dest: "{{ source.signed_by }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      when: gpg_format.stdout == 'binary'
+
+    - name: "GPG | {{ source_name }} | Remove temp file"
+      ansible.builtin.file:
+        path: "/tmp/{{ source_name }}.gpg.tmp"
+        state: absent
+
+## Fetch from keyserver (alternative to url fetching)
+
+- name: "GPG | {{ source_name }} | Fetch key from keyserver"
+  when:
+    - source.gpg.managed | default(false)
+    - source.gpg.keyserver is defined
+    - source.gpg.key_id is defined
+    - not keyring_existing.stat.exists
+  block:
+
+    - name: "GPG | {{ source_name }} | Receiving key from keyserver"
+      ansible.builtin.shell:
+        cmd: >
+          gpg
+          --no-default-keyring
+          --keyring /tmp/{{ source_name }}-keyring.gpg
+          --keyserver hkps://{{ source.gpg.keyserver }}
+          --recv-keys {{ source.gpg.key_id }}
+      register: gpg_recv
+      changed_when: "'imported' in gpg_recv.stderr"
+      retries: 3
+      delay: 5
+
+    - name: "GPG | {{ source_name }} | Export key to keyring dir"
+      ansible.builtin.shell:
+        cmd: >
+          gpg
+          --no-default-keyring
+          --keyring /tmp/{{ source_name }}-keyring.gpg
+          --export {{ source.gpg.key_id }}
+          > {{ source.signed_by }}
+      changed_when: true
+
+    - name: "GPG | {{ source_name }} | Remove temp keyring"
+      ansible.builtin.file:
+        path: "/tmp/{{ source_name }}-keyring.gpg"
+        state: absent
+
+## Set keyring permissions 
+
+- name: "GPG | {{ source_name }} | Set keyring file permissions"
+  ansible.builtin.file:
+    path: "{{ source.signed_by }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: source.gpg.managed | default(false)
+
+## Optional fingerprint verification 
+
+- name: "GPG | {{ source_name }} | Verify fingerprint"
+  when:
+    - source.gpg.managed | default(false)
+    - source.gpg.fingerprint is defined
+  block:
+
+    - name: GPG | {{ source_name }} | Read fingerprint from installed keyring
+      ansible.builtin.set_fact:
+        gpg_fingerprint_actual: "{{ lookup('file', source.signed_by) | community.crypto.gpg_fingerprint }}"
+      changed_when: false
+
+    - name: "GPG | {{ source_name }} | Assert fingerprint matches expected"
+      ansible.builtin.assert:
+        that:
+          - gpg_fingerprint_actual | length > 0
+          - source.gpg.fingerprint == gpg_fingerprint_actual
+        fail_msg: >
+          GPG fingerprint mismatch for '{{ source_name }}'!
+          Expected : '{{ source.gpg.fingerprint | upper }}'
+          Got      : '{{ gpg_fingerprint_actual | upper }}'
+        success_msg: >
+          Fingerprint verified for '{{ source_name }}':
+          {{ source.gpg.fingerprint | upper }}
+
+## Summary 
+
+- name: "GPG | {{ source_name }} | Report keyring status"
+  ansible.builtin.debug:
+    msg: >
+      {% if keyring_existing.stat.exists %}
+      Keyring already present - skipped fetch:
+      {% else %}
+      Keyring installed successfully:
+      {% endif %}
+      {{ source.signed_by }}
+      {% if source.gpg.fingerprint is defined %}
+      (fingerprint verified)
+      {% endif %}
+  when: source.gpg.managed | default(false)

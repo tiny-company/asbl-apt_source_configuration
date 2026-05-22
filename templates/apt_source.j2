@@ -1,0 +1,10 @@
+# Managed by Ansible — do not edit manually
+# Source : {{ source_name }}
+# Updated: {{ ansible_date_time.iso8601 }}
+
+Types: {{ source.types | join(' ') }}
+URIs: {{ source.uris | join('\n       ') }}
+Suites: {{ source.suites | join(' ') }}
+Components: {{ source.components | join(' ') }}
+Enabled: {{ 'yes' if source.enabled | default(true) else 'no' }}
+Signed-By: {{ source.signed_by }}

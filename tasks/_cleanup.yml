@@ -1,0 +1,69 @@
+---
+# Description : clean old sources files
+# file : _cleanup.yml
+
+- name: "Cleanup | Find all existing .sources files on host"
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: "*.sources"
+  register: existing_sources
+
+- name: "Cleanup | Build list of managed destination files"
+  ansible.builtin.set_fact:
+    managed_sources: "{{ apt_sources | dict2items | map(attribute='value.dest') | list }}"
+
+- name: "Cleanup | Show managed vs found files"
+  ansible.builtin.debug:
+    msg:
+      managed: "{{ managed_sources }}"
+      found:   "{{ existing_sources.files | map(attribute='path') | list | sort }}"
+
+- name: "Cleanup | Identify unmanaged .sources files"
+  ansible.builtin.set_fact:
+    unmanaged_sources: >-
+      {{
+        existing_sources.files
+        | map(attribute='path')
+        | reject('in', managed_sources)
+        | list
+        | sort
+      }}
+
+- name: "Cleanup | Show files that will be removed"
+  ansible.builtin.debug:
+    msg: "Unmanaged sources to remove: {{ unmanaged_sources }}"
+  when: unmanaged_sources | length > 0
+
+- name: "Cleanup | Backup unmanaged files before removal"
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: >-
+      {{ apt_backup_dir }}/{{ item | basename }}.{{ ansible_date_time.iso8601_basic_short }}.removed.bak
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ unmanaged_sources }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: unmanaged_sources | length > 0
+
+- name: "Cleanup | Remove unmanaged .sources files"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ unmanaged_sources }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: unmanaged_sources | length > 0
+  notify: Run apt update
+
+- name: "Cleanup | Report removed files"
+  ansible.builtin.debug:
+    msg: "Removed {{ unmanaged_sources | length }} unmanaged source(s): {{ unmanaged_sources | map('basename') | list }}"
+  when: unmanaged_sources | length > 0
+
+- name: "Cleanup | Nothing to remove"
+  ansible.builtin.debug:
+    msg: "All .sources files are managed by Ansible — nothing to remove."
+  when: unmanaged_sources | length == 0

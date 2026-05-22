@@ -1,0 +1,9 @@
+---
+
+- name: apt_source_configuration playbook
+  hosts: all
+  roles:
+    - role: ../asbl-apt_source_configuration
+      become: true
+      become_user: "{{ root_username | default('root') }}"
+      tags: [apt_source_configuration]

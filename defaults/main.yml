@@ -1,0 +1,71 @@
+---
+# Description : default vars for this role
+# file : main.yml
+
+## clean up unmanaged sources 
+apt_cleanup_unmanaged: true
+
+## apt source file backup vars
+apt_backup_dir: "/etc/apt/backups"
+apt_backup_keep: 5
+
+## keyring vars
+apt_gpg_keyring_dir: "/usr/share/keyrings"
+
+## apt source vars  
+apt_sources:
+  debian:
+    dest: /etc/apt/sources.list.d/debian.sources
+    types: ["deb", "deb-src"]
+    uris:
+      - "https://deb.debian.org/debian"
+    suites:
+      - "{{ ansible_distribution_release }}"
+      - "{{ ansible_distribution_release }}-updates"
+    components: ["main", "contrib", "non-free-firmware"]
+    signed_by: /usr/share/keyrings/debian-archive-keyring.gpg
+    gpg:
+      managed: false  ## already on system, skip fetch
+    enabled: true
+
+  debian_security:
+    dest: /etc/apt/sources.list.d/debian-security.sources
+    types: ["deb"]
+    uris:
+      - "https://security.debian.org/debian-security"
+    suites:
+      - "{{ ansible_distribution_release }}-security"
+    components: ["main", "non-free-firmware"]
+    signed_by: /usr/share/keyrings/debian-archive-keyring.gpg
+    gpg:
+      managed: false
+    enabled: true
+
+  backports:
+    dest: /etc/apt/sources.list.d/debian-backports.sources
+    types: ["deb"]
+    uris:
+      - "https://deb.debian.org/debian"
+    suites:
+      - "{{ ansible_distribution_release }}-backports"
+    components: ["main", "non-free-firmware"]
+    signed_by: /usr/share/keyrings/debian-archive-keyring.gpg
+    gpg:
+      managed: false
+    enabled: false
+
+  # docker:
+  #   dest: /etc/apt/sources.list.d/docker.sources
+  #   types: ["deb"]
+  #   uris:
+  #     - "https://download.docker.com/linux/debian"
+  #   suites:
+  #     - "{{ ansible_distribution_release }}"
+  #   components: ["stable"]
+  #   signed_by: /usr/share/keyrings/docker-archive-keyring.gpg
+  #   enabled: true
+  #   src: false
+  #   gpg:
+  #     managed: true
+  #     url: "https://download.docker.com/linux/debian/gpg"
+  #     fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
