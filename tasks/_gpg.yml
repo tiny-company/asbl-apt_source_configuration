@@ -22,8 +22,8 @@
       - ca-certificates
     state: present
     update_cache: false
-    when: 
-      - "apt_pgp_package_name not in ansible_facts.packages"
+  when: 
+    - "apt_pgp_package_name not in ansible_facts.packages"
 
 ## Keyring dir 
 
