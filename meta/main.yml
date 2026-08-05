@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: apt_source_configuration
+  author: ottomatic
+  description: role for setting apt source configuration
+  company: tiny-company
+  license: license GPL-3.0-only
+  min_ansible_version: 2.14.1
+
+allow_duplicates: true
