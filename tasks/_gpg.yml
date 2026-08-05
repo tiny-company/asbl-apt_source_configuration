@@ -3,8 +3,7 @@
 # file : _gpg.yml
 
 
-## Skip if not managed 
-
+## Skip i
 - name: "GPG | {{ source_name }} | Skip - keyring not managed by this role"
   ansible.builtin.debug:
     msg: >
@@ -12,7 +11,11 @@
       signed_by={{ source.signed_by }} is expected to already exist.
   when: not source.gpg.managed | default(false)
 
-## Dependencies 
+## Dependencies
+- name: "GPG | {{ source_name }} | Gather installed package facts"
+  ansible.builtin.package_facts:
+    manager: apt
+  when: ansible_facts.packages is not defined
 
 - name: "GPG | {{ source_name }} | Ensure gnupg and curl are installed"
   ansible.builtin.apt:
@@ -26,7 +29,6 @@
     - "apt_pgp_package_name not in ansible_facts.packages"
 
 ## Keyring dir 
-
 - name: "GPG | {{ source_name }} | Ensure keyring directory exists"
   ansible.builtin.file:
     path: "{{ apt_gpg_keyring_dir }}"
@@ -36,14 +38,12 @@
     mode: "0755"
 
 ## Check if keyring already exists 
-
 - name: "GPG | {{ source_name }} | Check if keyring already exists"
   ansible.builtin.stat:
     path: "{{ source.signed_by }}"
   register: keyring_existing
 
 ## Fetch from URL 
-
 - name: "GPG | {{ source_name }} | Fetch key from URL"
   when:
     - source.gpg.managed | default(false)
@@ -92,7 +92,6 @@
         state: absent
 
 ## Fetch from keyserver (alternative to url fetching)
-
 - name: "GPG | {{ source_name }} | Fetch key from keyserver"
   when:
     - source.gpg.managed | default(false)
@@ -130,7 +129,6 @@
         state: absent
 
 ## Set keyring permissions 
-
 - name: "GPG | {{ source_name }} | Set keyring file permissions"
   ansible.builtin.file:
     path: "{{ source.signed_by }}"
@@ -140,7 +138,6 @@
   when: source.gpg.managed | default(false)
 
 ## Optional fingerprint verification 
-
 - name: "GPG | {{ source_name }} | Verify fingerprint"
   when:
     - source.gpg.managed | default(false)
@@ -166,7 +163,6 @@
           {{ source.gpg.fingerprint | upper }}
 
 ## Summary 
-
 - name: "GPG | {{ source_name }} | Report keyring status"
   ansible.builtin.debug:
     msg: >
