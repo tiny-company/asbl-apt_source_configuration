@@ -34,6 +34,19 @@
     msg: "Unmanaged sources to remove: {{ unmanaged_sources }}"
   when: unmanaged_sources | length > 0
 
+- name: "Cleanup | Make sure that backup path exist"
+  ansible.builtin.file:
+    path: "{{ apt_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ unmanaged_sources }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  when: unmanaged_sources | length > 0
+
+
 - name: "Cleanup | Backup unmanaged files before removal"
   ansible.builtin.copy:
     src: "{{ item }}"
