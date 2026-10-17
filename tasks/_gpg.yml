@@ -144,9 +144,14 @@
     - source.gpg.fingerprint is defined
   block:
 
+    - name: "GPG | {{ source_name }} | Slurp installed keyring from managed host"
+      ansible.builtin.slurp:
+        src: "{{ source.signed_by }}"
+      register: gpg_keyring_slurp
+
     - name: GPG | {{ source_name }} | Read fingerprint from installed keyring
       ansible.builtin.set_fact:
-        gpg_fingerprint_actual: "{{ lookup('file', source.signed_by) | community.crypto.gpg_fingerprint }}"
+        gpg_fingerprint_actual: "{{ gpg_keyring_slurp.content | b64decode | community.crypto.gpg_fingerprint }}"
       changed_when: false
 
     - name: "GPG | {{ source_name }} | Assert fingerprint matches expected"
